@@ -11,6 +11,8 @@ import (
 	"github.com/streadway/amqp"
 	"log"
 	"net/url"
+	"strconv"
+	"time"
 )
 
 type Consumer struct {
@@ -21,6 +23,8 @@ type Consumer struct {
 	ErrLogger   *log.Logger
 	InfLogger   *log.Logger
 	Executer    *command.CommandExecuter
+	DeadLetter  bool
+	Retry       int
 	Compression bool
 }
 
@@ -32,19 +36,27 @@ func (c *Consumer) Consume() {
 	}
 	c.InfLogger.Println("Succeeded registering consumer.")
 
+	sendCh, err := c.Connection.Channel()
+	if err != nil {
+		c.ErrLogger.Println("Could not open channel to republish failed jobs %s", err)
+	}
+
 	defer c.Connection.Close()
 	defer c.Channel.Close()
+	defer sendCh.Close()
 
 	forever := make(chan bool)
 
 	go func() {
 		for d := range msgs {
+			c.InfLogger.Println("reading deliveries")
 			input := d.Body
 			if c.Compression {
 				var b bytes.Buffer
 				w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
 				if err != nil {
 					c.ErrLogger.Println("Could not create zlib handler")
+
 					d.Nack(true, true)
 				}
 				c.InfLogger.Println("Compressed message")
@@ -54,12 +66,55 @@ func (c *Consumer) Consume() {
 				input = b.Bytes()
 			}
 
-			cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-			if c.Executer.Execute(cmd) {
-				d.Ack(true)
+			if c.DeadLetter {
+				var retryCount int
+				if d.Headers == nil {
+					d.Headers = make(map[string]interface{}, 0)
+				}
+				retry, ok := d.Headers["retry_count"]
+				if !ok {
+					retry = "0"
+				}
+				c.InfLogger.Println(fmt.Sprintf("retry %s", retry))
+
+				retryCount, err = strconv.Atoi(retry.(string))
+				if err != nil {
+					c.ErrLogger.Fatal("could not parse retry header")
+				}
+
+				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
+
+				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				if c.Executer.Execute(cmd) {
+					d.Ack(true)
+				} else if retryCount >= c.Retry {
+					d.Nack(true, false)
+				} else {
+					//republish message with new retry header
+					retryCount++
+					d.Headers["retry_count"] = strconv.Itoa(retryCount)
+					republish := amqp.Publishing{
+						ContentType:     d.ContentType,
+						ContentEncoding: d.ContentEncoding,
+						Timestamp:       time.Now(),
+						Body:            d.Body,
+						Headers:         d.Headers,
+					}
+					err = sendCh.Publish("", c.Queue, false, false, republish)
+					if err != nil {
+						c.ErrLogger.Println("error republish %s", err)
+					}
+					d.Ack(true)
+				}
 			} else {
-				d.Nack(true, true)
+				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				if c.Executer.Execute(cmd) {
+					d.Ack(true)
+				} else {
+					d.Nack(true, false)
+				}
 			}
+
 		}
 	}()
 	c.InfLogger.Println("Waiting for messages...")
@@ -100,16 +155,36 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 	}
 	infLogger.Println("Succeeded setting QoS.")
 
-	infLogger.Printf("Declaring queue \"%s\"...", cfg.RabbitMq.Queue)
-	_, err = ch.QueueDeclare(cfg.RabbitMq.Queue, true, false, false, false, nil)
-
-	if nil != err {
-		return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
-	}
-
 	// Check for missing exchange settings to preserve BC
 	if "" == cfg.Exchange.Name && "" == cfg.Exchange.Type && !cfg.Exchange.Durable && !cfg.Exchange.Autodelete {
 		cfg.Exchange.Type = "direct"
+	}
+
+	var table map[string]interface{}
+	deadLetter := false
+
+	if "" != cfg.Deadexchange.Name {
+		infLogger.Printf("Declaring exchange \"%s\"...", cfg.Deadexchange.Name)
+		err = ch.ExchangeDeclare(cfg.Deadexchange.Name, cfg.Deadexchange.Type, cfg.Deadexchange.Durable, cfg.Deadexchange.AutoDelete, false, false, amqp.Table{})
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
+		}
+
+		table = make(map[string]interface{}, 0)
+		table["x-dead-letter-exchange"] = cfg.Deadexchange.Name
+
+		infLogger.Printf("Declaring error queue \"%s\"...", cfg.Deadexchange.Queue)
+		_, err = ch.QueueDeclare(cfg.Deadexchange.Queue, true, false, false, false, amqp.Table{})
+
+		// Bind queue
+		infLogger.Printf("Binding  error queue \"%s\" to dead letter exchange \"%s\"...", cfg.Deadexchange.Queue, cfg.Deadexchange.Name)
+		err = ch.QueueBind(cfg.Deadexchange.Queue, "", cfg.Deadexchange.Name, false, amqp.Table{})
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue to exchange: %s", err.Error()))
+		}
+		deadLetter = true
 	}
 
 	// Empty Exchange name means default, no need to declare
@@ -121,13 +196,20 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
 		}
 
-		// Bind queue
+		// Bind queue (before declare??)
 		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.RabbitMq.Queue, cfg.Exchange.Name)
-		err = ch.QueueBind(cfg.RabbitMq.Queue, "", cfg.Exchange.Name, false, nil)
+		err = ch.QueueBind(cfg.RabbitMq.Queue, "", cfg.Exchange.Name, false, table)
 
 		if nil != err {
 			return nil, errors.New(fmt.Sprintf("Failed to bind queue to exchange: %s", err.Error()))
 		}
+	}
+
+	infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.RabbitMq.Queue, table)
+	_, err = ch.QueueDeclare(cfg.RabbitMq.Queue, true, false, false, false, table)
+
+	if nil != err {
+		return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
 	}
 
 	return &Consumer{
@@ -139,5 +221,7 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 		InfLogger:   infLogger,
 		Executer:    command.New(errLogger, infLogger),
 		Compression: cfg.RabbitMq.Compression,
+		DeadLetter:  deadLetter,
+		Retry:       cfg.Deadexchange.Retry,
 	}, nil
 }

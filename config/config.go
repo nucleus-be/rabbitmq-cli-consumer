@@ -16,14 +16,22 @@ type Config struct {
 		Compression bool
 	}
 	Prefetch struct {
-		Count     int
-		Global    bool
+		Count  int
+		Global bool
 	}
 	Exchange struct {
-		Name		string
-		Autodelete	bool
-		Type		string
-		Durable		bool
+		Name       string
+		Autodelete bool
+		Type       string
+		Durable    bool
+	}
+	Deadexchange struct {
+		Name       string
+		AutoDelete bool
+		Type       string
+		Durable    bool
+		Queue      string
+		Retry      int
 	}
 	Logs struct {
 		Error string
