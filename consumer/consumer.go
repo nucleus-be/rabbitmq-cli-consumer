@@ -194,19 +194,19 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 
 	// Empty Exchange name means default, no need to declare
 	if "" != cfg.Exchange.Name {
-		infLogger.Printf("Declaring exchange \"%s\"...", cfg.Exchange.Name)
+		infLogger.Printf("Declaring deadletter exchange \"%s\"...", cfg.Exchange.Name)
 		err = ch.ExchangeDeclare(cfg.Exchange.Name, cfg.Exchange.Type, cfg.Exchange.Durable, cfg.Exchange.Autodelete, false, false, amqp.Table{})
 
 		if nil != err {
-			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
+			return nil, errors.New(fmt.Sprintf("Failed to declare deadletter exchange: %s", err.Error()))
 		}
 
 		// Bind queue (before declare??)
-		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.RabbitMq.Queue, cfg.Exchange.Name)
+		infLogger.Printf("Binding queue \"%s\" to deadletter exchange \"%s\"...", cfg.RabbitMq.Queue, cfg.Exchange.Name)
 		err = ch.QueueBind(cfg.RabbitMq.Queue, "", cfg.Exchange.Name, false, table)
 
 		if nil != err {
-			return nil, errors.New(fmt.Sprintf("Failed to bind queue to exchange: %s", err.Error()))
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue to deadletter exchange: %s", err.Error()))
 		}
 	}
 
