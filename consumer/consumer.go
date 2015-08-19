@@ -36,14 +36,19 @@ func (c *Consumer) Consume() {
 	}
 	c.InfLogger.Println("Succeeded registering consumer.")
 
-	sendCh, err := c.Connection.Channel()
-	if err != nil {
-		c.ErrLogger.Println("Could not open channel to republish failed jobs %s", err)
+	var sendCh *amqp.Channel
+
+	if c.DeadLetter {
+		var err error
+		sendCh, err = c.Connection.Channel()
+		if err != nil {
+			c.ErrLogger.Println("Could not open channel to republish failed jobs %s", err)
+		}
+		defer sendCh.Close()
 	}
 
 	defer c.Connection.Close()
 	defer c.Channel.Close()
-	defer sendCh.Close()
 
 	forever := make(chan bool)
 
