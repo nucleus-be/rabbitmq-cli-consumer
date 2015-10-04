@@ -54,70 +54,80 @@ func (c *Consumer) Consume() {
 	go func() {
 		for d := range msgs {
 			c.InfLogger.Println("reading deliveries")
-			input := d.Body
-			if c.Compression {
-				c.InfLogger.Println("Compressed message")
-				decompressed, err := c.Decompress(input)
-				if err != nil {
-					c.ErrLogger.Println("Could not create zlib handler")
-					d.Nack(true, true)
-				}
-				input = decompressed
-
-			}
-			if c.DeadLetter {
-				var retryCount int
-				if d.Headers == nil {
-					d.Headers = make(map[string]interface{}, 0)
-				}
-				retry, ok := d.Headers["retry_count"]
-				if !ok {
-					retry = "0"
-				}
-				c.InfLogger.Println(fmt.Sprintf("retry %s", retry))
-
-				retryCount, err = strconv.Atoi(retry.(string))
-				if err != nil {
-					c.ErrLogger.Fatal("could not parse retry header")
-				}
-
-				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
-
-				cmd := c.Factory.Create(input)
-				if c.Runner.Run(cmd) {
-					d.Ack(true)
-				} else if retryCount >= c.Retry {
-					d.Nack(true, false)
-				} else {
-					//republish message with new retry header
-					retryCount++
-					d.Headers["retry_count"] = strconv.Itoa(retryCount)
-					republish := amqp.Publishing{
-						ContentType:     d.ContentType,
-						ContentEncoding: d.ContentEncoding,
-						Timestamp:       time.Now(),
-						Body:            d.Body,
-						Headers:         d.Headers,
-					}
-					err = sendCh.Publish("", c.Queue, false, false, republish)
+			go func(delivery amqp.Delivery) {
+				input := delivery.Body
+				if c.Compression {
+					c.InfLogger.Println("Compressed message")
+					decompressed, err := c.Decompress(input)
 					if err != nil {
-						c.ErrLogger.Println("error republish %s", err)
+						c.ErrLogger.Println("Could not create zlib handler")
+						delivery.Nack(true, true)
 					}
-					d.Ack(true)
+					input = decompressed
+
 				}
-			} else {
-				cmd := c.Factory.Create(input)
-				if c.Runner.Run(cmd) {
-					d.Ack(true)
+				if c.DeadLetter {
+					c.DeadLetterDelivery(delivery, input, sendCh)
 				} else {
-					d.Nack(true, false)
+					c.NormalDelivery(delivery, input)
 				}
-			}
+
+			}(d)
 
 		}
 	}()
 	c.InfLogger.Println("Waiting for messages...")
 	<-forever
+}
+
+func (c *Consumer) DeadLetterDelivery(d amqp.Delivery, input []byte, sendCh *amqp.Channel) {
+	if d.Headers == nil {
+		d.Headers = make(map[string]interface{}, 0)
+	}
+	retry, ok := d.Headers["retry_count"]
+	if !ok {
+		retry = "0"
+	}
+	c.InfLogger.Println(fmt.Sprintf("retry %s", retry))
+
+	retryCount, err := strconv.Atoi(retry.(string))
+	if err != nil {
+		c.ErrLogger.Fatal("could not parse retry header")
+	}
+
+	c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
+
+	cmd := c.Factory.Create(input)
+	if c.Runner.Run(cmd) {
+		d.Ack(true)
+	} else if retryCount >= c.Retry {
+		d.Nack(true, false)
+	} else {
+		//republish message with new retry header
+		retryCount++
+		d.Headers["retry_count"] = strconv.Itoa(retryCount)
+		republish := amqp.Publishing{
+			ContentType:     d.ContentType,
+			ContentEncoding: d.ContentEncoding,
+			Timestamp:       time.Now(),
+			Body:            d.Body,
+			Headers:         d.Headers,
+		}
+		err = sendCh.Publish("", c.Queue, false, false, republish)
+		if err != nil {
+			c.ErrLogger.Println("error republish %s", err)
+		}
+		d.Ack(true)
+	}
+}
+
+func (c *Consumer) NormalDelivery(d amqp.Delivery, input []byte) {
+	cmd := c.Factory.Create(input)
+	if c.Runner.Run(cmd) {
+		d.Ack(true)
+	} else {
+		d.Nack(true, false)
+	}
 }
 
 func (c *Consumer) Decompress(input []byte) ([]byte, error) {
