@@ -23,6 +23,10 @@ func main() {
 			Usage: "Location of executable",
 		},
 		cli.StringFlag{
+			Name:  "url, u",
+			Usage: "URL to be called by the service",
+		},
+		cli.StringFlag{
 			Name:  "configuration, c",
 			Usage: "Location of configuration file",
 		},
@@ -32,7 +36,7 @@ func main() {
 		},
 	}
 	app.Action = func(c *cli.Context) {
-		if c.String("configuration") == "" && c.String("executable") == "" {
+		if c.String("configuration") == "" && (c.String("executable") == "" || c.String("url") == "") {
 			cli.ShowAppHelp(c)
 			os.Exit(1)
 		}
@@ -56,7 +60,13 @@ func main() {
 			logger.Fatalf("Failed creating info log: %s", err)
 		}
 
-		factory := command.Factory(c.String("executable"))
+		var factory Factory
+
+		if c.String("url") != "" {
+			factory = command.NewHttpFactory(c.String("url"), "application/json")
+		} else {
+			factory = command.NewCliFactory(c.String("executable"))
+		}
 
 		client, err := consumer.New(cfg, factory, errLogger, infLogger)
 		if err != nil {

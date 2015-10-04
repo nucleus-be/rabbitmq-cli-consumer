@@ -3,7 +3,6 @@ package consumer
 import (
 	"bytes"
 	"compress/zlib"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/ricbra/rabbitmq-cli-consumer/command"
@@ -19,12 +18,12 @@ type Consumer struct {
 	Channel     *amqp.Channel
 	Connection  *amqp.Connection
 	Queue       string
-	Factory     *command.CommandFactory
+	Factory     command.Factory
 	ErrLogger   *log.Logger
 	InfLogger   *log.Logger
-	Executer    *command.CommandExecuter
 	DeadLetter  bool
 	Retry       int
+	Runner      command.Runner
 	Compression bool
 }
 
@@ -57,20 +56,15 @@ func (c *Consumer) Consume() {
 			c.InfLogger.Println("reading deliveries")
 			input := d.Body
 			if c.Compression {
-				var b bytes.Buffer
-				w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+				c.InfLogger.Println("Compressed message")
+				decompressed, err = c.Decompress(input)
 				if err != nil {
 					c.ErrLogger.Println("Could not create zlib handler")
-
 					d.Nack(true, true)
 				}
-				c.InfLogger.Println("Compressed message")
-				w.Write(input)
-				w.Close()
+				input = decompressed
 
-				input = b.Bytes()
 			}
-
 			if c.DeadLetter {
 				var retryCount int
 				if d.Headers == nil {
@@ -89,8 +83,8 @@ func (c *Consumer) Consume() {
 
 				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
 
-				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-				if c.Executer.Execute(cmd) {
+				cmd := c.Factory.Create(input)
+				if c.Runner.Run(cmd) {
 					d.Ack(true)
 				} else if retryCount >= c.Retry {
 					d.Nack(true, false)
@@ -112,8 +106,8 @@ func (c *Consumer) Consume() {
 					d.Ack(true)
 				}
 			} else {
-				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-				if c.Executer.Execute(cmd) {
+				cmd := c.Factory.Create(input)
+				if c.Runner.Run(cmd) {
 					d.Ack(true)
 				} else {
 					d.Nack(true, false)
@@ -126,7 +120,20 @@ func (c *Consumer) Consume() {
 	<-forever
 }
 
-func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogger *log.Logger) (*Consumer, error) {
+func (c *Consumer) DeCompress(input []byte) ([]byte, error) {
+	var b bytes.Buffer
+	w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+	if err != nil {
+		return []byte{}, err
+	}
+	w.Write(input)
+	w.Close()
+
+	return b.Bytes(), nil
+
+}
+
+func New(cfg *config.Config, factory command.Factory, errLogger, infLogger *log.Logger) (*Consumer, error) {
 	uri := fmt.Sprintf(
 		"amqp://%s:%s@%s:%s%s",
 		url.QueryEscape(cfg.RabbitMq.Username),
@@ -224,7 +231,7 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 		Factory:     factory,
 		ErrLogger:   errLogger,
 		InfLogger:   infLogger,
-		Executer:    command.New(errLogger, infLogger),
+		Runner:      command.NewRunner(errLogger, infLogger),
 		Compression: cfg.RabbitMq.Compression,
 		DeadLetter:  deadLetter,
 		Retry:       cfg.Deadexchange.Retry,

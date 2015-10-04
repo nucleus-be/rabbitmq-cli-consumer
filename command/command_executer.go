@@ -2,24 +2,27 @@ package command
 
 import (
 	"log"
-	"os/exec"
 )
+
+type Runner interface {
+	Run(cmd Command) bool
+}
 
 type CommandExecuter struct {
 	errLogger *log.Logger
 	infLogger *log.Logger
 }
 
-func New(errLogger, infLogger *log.Logger) *CommandExecuter {
-	return &CommandExecuter{
+func NewRunner(errLogger, infLogger *log.Logger) Runner {
+	return CommandExecuter{
 		errLogger: errLogger,
 		infLogger: infLogger,
 	}
 }
 
-func (me CommandExecuter) Execute(cmd *exec.Cmd) bool {
+func (me CommandExecuter) Run(cmd Command) bool {
 	me.infLogger.Println("Processing message...")
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Execute()
 
 	//log output php script to info
 	me.infLogger.Printf("Output php: %s\n", string(out[:]))
