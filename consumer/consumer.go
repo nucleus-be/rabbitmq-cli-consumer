@@ -57,7 +57,7 @@ func (c *Consumer) Consume() {
 			input := d.Body
 			if c.Compression {
 				c.InfLogger.Println("Compressed message")
-				decompressed, err = c.Decompress(input)
+				decompressed, err := c.Decompress(input)
 				if err != nil {
 					c.ErrLogger.Println("Could not create zlib handler")
 					d.Nack(true, true)
@@ -120,7 +120,7 @@ func (c *Consumer) Consume() {
 	<-forever
 }
 
-func (c *Consumer) DeCompress(input []byte) ([]byte, error) {
+func (c *Consumer) Decompress(input []byte) ([]byte, error) {
 	var b bytes.Buffer
 	w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
 	if err != nil {

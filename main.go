@@ -60,7 +60,7 @@ func main() {
 			logger.Fatalf("Failed creating info log: %s", err)
 		}
 
-		var factory Factory
+		var factory command.Factory
 
 		if c.String("url") != "" {
 			factory = command.NewHttpFactory(c.String("url"), "application/json")
