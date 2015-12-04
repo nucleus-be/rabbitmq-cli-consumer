@@ -201,23 +201,23 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
 		}
 
-	}
+		//binding to exchange
 
-	//binding to default direct exchange
+		infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.Queue.Name, table)
+		_, err = ch.QueueDeclare(cfg.Queue.Name, true, false, false, false, table)
 
-	infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.Queue.Name, table)
-	_, err = ch.QueueDeclare(cfg.Queue.Name, true, false, false, false, table)
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
+		}
 
-	if nil != err {
-		return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
-	}
+		// Bind queue with key
+		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.Queue.Name, cfg.Exchange.Name)
+		err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, cfg.Exchange.Name, false, table)
 
-	// Bind queue with key
-	infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.Queue.Name, "")
-	err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, "", false, table)
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue exchange: %s", err.Error()))
+		}
 
-	if nil != err {
-		return nil, errors.New(fmt.Sprintf("Failed to bind queue exchange: %s", err.Error()))
 	}
 
 	return &Consumer{
