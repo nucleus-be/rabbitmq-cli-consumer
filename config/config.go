@@ -12,7 +12,6 @@ type Config struct {
 		Password    string
 		Port        string
 		Vhost       string
-		Queue       string
 		Compression bool
 	}
 	Prefetch struct {
@@ -24,6 +23,10 @@ type Config struct {
 		Autodelete bool
 		Type       string
 		Durable    bool
+	}
+	Queue struct {
+		Key  string
+		Name string
 	}
 	Deadexchange struct {
 		Name       string

@@ -169,7 +169,7 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 	deadLetter := false
 
 	if "" != cfg.Deadexchange.Name {
-		infLogger.Printf("Declaring exchange \"%s\"...", cfg.Deadexchange.Name)
+		infLogger.Printf("Declaring  deadletter exchange \"%s\"...", cfg.Deadexchange.Name)
 		err = ch.ExchangeDeclare(cfg.Deadexchange.Name, cfg.Deadexchange.Type, cfg.Deadexchange.Durable, cfg.Deadexchange.AutoDelete, false, false, amqp.Table{})
 
 		if nil != err {
@@ -187,40 +187,40 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 		err = ch.QueueBind(cfg.Deadexchange.Queue, "", cfg.Deadexchange.Name, false, amqp.Table{})
 
 		if nil != err {
-			return nil, errors.New(fmt.Sprintf("Failed to bind queue to exchange: %s", err.Error()))
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue to dead-letter exchange: %s", err.Error()))
 		}
 		deadLetter = true
 	}
 
 	// Empty Exchange name means default, no need to declare
 	if "" != cfg.Exchange.Name {
-		infLogger.Printf("Declaring deadletter exchange \"%s\"...", cfg.Exchange.Name)
+		infLogger.Printf("Declaring exchange \"%s\"...", cfg.Exchange.Name)
 		err = ch.ExchangeDeclare(cfg.Exchange.Name, cfg.Exchange.Type, cfg.Exchange.Durable, cfg.Exchange.Autodelete, false, false, amqp.Table{})
 
 		if nil != err {
-			return nil, errors.New(fmt.Sprintf("Failed to declare deadletter exchange: %s", err.Error()))
+			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
+		}
+
+		infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.Queue.Name, table)
+		_, err = ch.QueueDeclare(cfg.Queue.Name, true, false, false, false, table)
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
 		}
 
 		// Bind queue (before declare??)
-		infLogger.Printf("Binding queue \"%s\" to deadletter exchange \"%s\"...", cfg.RabbitMq.Queue, cfg.Exchange.Name)
-		err = ch.QueueBind(cfg.RabbitMq.Queue, "", cfg.Exchange.Name, false, table)
+		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.Queue.Name, cfg.Exchange.Name)
+		err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, cfg.Exchange.Name, false, table)
 
 		if nil != err {
 			return nil, errors.New(fmt.Sprintf("Failed to bind queue to deadletter exchange: %s", err.Error()))
 		}
 	}
 
-	infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.RabbitMq.Queue, table)
-	_, err = ch.QueueDeclare(cfg.RabbitMq.Queue, true, false, false, false, table)
-
-	if nil != err {
-		return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
-	}
-
 	return &Consumer{
 		Channel:     ch,
 		Connection:  conn,
-		Queue:       cfg.RabbitMq.Queue,
+		Queue:       cfg.Queue.Name,
 		Factory:     factory,
 		ErrLogger:   errLogger,
 		InfLogger:   infLogger,
