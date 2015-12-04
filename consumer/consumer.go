@@ -214,7 +214,7 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 
 	// Bind queue with key
 	infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.Queue.Name, "")
-	err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, cfg.Exchange.Name, false, table)
+	err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, "", false, table)
 
 	if nil != err {
 		return nil, errors.New(fmt.Sprintf("Failed to bind queue exchange: %s", err.Error()))
