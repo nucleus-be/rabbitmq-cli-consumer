@@ -90,7 +90,7 @@ func (c *Consumer) Consume() {
 				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
 
 				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-				if c.Executer.Execute(cmd) {
+				if c.Executer.Execute(cmd, d.Body[:]) {
 					d.Ack(true)
 				} else if retryCount >= c.Retry {
 					d.Nack(true, false)
@@ -113,7 +113,7 @@ func (c *Consumer) Consume() {
 				}
 			} else {
 				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-				if c.Executer.Execute(cmd) {
+				if c.Executer.Execute(cmd, d.Body[:]) {
 					d.Ack(true)
 				} else {
 					d.Nack(true, false)

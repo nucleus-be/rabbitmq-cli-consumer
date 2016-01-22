@@ -22,7 +22,7 @@ func New(errLogger, infLogger *log.Logger) *CommandExecuter {
 	}
 }
 
-func (me CommandExecuter) Execute(cmd *exec.Cmd) bool {
+func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 	me.infLogger.Println("Processing message...")
 	out, err := cmd.CombinedOutput()
 

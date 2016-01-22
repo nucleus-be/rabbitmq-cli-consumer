@@ -7,26 +7,29 @@ import (
 )
 
 type ProvisionEvent struct {
-	Error  bool   `json:"is_error"`
-	Output string `json:"out"`
+	Error   bool   `json:"is_error"`
+	Output  string `json:"out"`
+	Message []byte `json:"message"`
 }
 
 type NetLogger struct {
 	Address string
 }
 
-func (n *NetLogger) SendOK(p []byte) error {
+func (n *NetLogger) SendOK(p []byte, bod []byte) error {
 	event := ProvisionEvent{
-		Error:  false,
-		Output: string(p),
+		Error:   false,
+		Output:  string(p),
+		Message: bod,
 	}
 	return n.send(&event)
 }
 
-func (n *NetLogger) SendError(p []byte) error {
+func (n *NetLogger) SendError(p []byte, bod []byte) error {
 	event := ProvisionEvent{
-		Error:  true,
-		Output: string(p),
+		Error:   true,
+		Output:  string(p),
+		Message: bod,
 	}
 	return n.send(&event)
 }
