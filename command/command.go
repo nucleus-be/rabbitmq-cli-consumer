@@ -1,7 +1,12 @@
 package command
 
 import (
+	"github.com/ricbra/rabbitmq-cli-consumer/config"
 	"strings"
+)
+
+var (
+	Cconf *config.Config
 )
 
 func Factory(baseCmd string) *CommandFactory {

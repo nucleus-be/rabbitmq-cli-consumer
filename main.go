@@ -42,6 +42,8 @@ func main() {
 		logger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
 		cfg, err := config.LoadAndParse(c.String("configuration"))
 
+		command.Cconf = cfg
+
 		if err != nil {
 			logger.Fatalf("Failed parsing configuration: %s\n", err)
 		}
