@@ -12,14 +12,23 @@ type CommandExecuter struct {
 }
 
 func New(errLogger, infLogger *log.Logger) *CommandExecuter {
-	netLogger := new(NetLogger)
-	netLogger.Address = Cconf.Logs.Rpc
+
+	if len(Cconf.Logs.Rpc) > 1 {
+		netLogger := new(NetLogger)
+		netLogger.Address = Cconf.Logs.Rpc
+
+		return &CommandExecuter{
+			errLogger: errLogger,
+			infLogger: infLogger,
+			netLogger: netLogger,
+		}
+	}
 
 	return &CommandExecuter{
 		errLogger: errLogger,
 		infLogger: infLogger,
-		netLogger: netLogger,
 	}
+
 }
 
 func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
@@ -33,13 +42,20 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 		me.infLogger.Println("Failed. Check error log for details.")
 		me.errLogger.Printf("Failed: %s\n", string(out[:]))
 		me.errLogger.Printf("Error: %s\n", err)
-		me.netLogger.SendError([]byte(err.Error()), body)
-		me.netLogger.SendError(out[:], body)
+
+		if len(Cconf.Logs.Rpc) > 1 {
+			me.netLogger.SendError([]byte(err.Error()), body)
+			me.netLogger.SendError(out[:], body)
+		}
+
 		return false
 	}
 
 	me.infLogger.Println("Processed!")
-	me.netLogger.SendOK(out, body)
+
+	if len(Cconf.Logs.Rpc) > 1 {
+		me.netLogger.SendOK(out, body)
+	}
 
 	return true
 }
