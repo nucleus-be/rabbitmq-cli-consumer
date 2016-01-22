@@ -33,13 +33,13 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 		me.infLogger.Println("Failed. Check error log for details.")
 		me.errLogger.Printf("Failed: %s\n", string(out[:]))
 		me.errLogger.Printf("Error: %s\n", err)
-		me.netLogger.SendError([]byte(err.Error()))
-		me.netLogger.SendError(out[:])
+		me.netLogger.SendError([]byte(err.Error()), body)
+		me.netLogger.SendError(out[:], body)
 		return false
 	}
 
 	me.infLogger.Println("Processed!")
-	me.netLogger.SendOK(out)
+	me.netLogger.SendOK(out, body)
 
 	return true
 }
