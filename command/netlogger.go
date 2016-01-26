@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"math/rand"
 	"net/http"
@@ -44,6 +45,21 @@ func (n *NetLogger) Send(p []byte, bod []byte, isError bool) error {
 	return n.send(&event)
 }
 
+func NewNetLogger() *NetLogger {
+	cfg := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	http.DefaultClient.Transport = &http.Transport{
+		TLSClientConfig: cfg,
+	}
+
+	netLogger := new(NetLogger)
+	netLogger.Address = Cconf.Logs.Rpc
+
+	return netLogger
+}
+
 func (n *NetLogger) send(p *ProvisionEvent) error {
 	post, _ := json.Marshal(p)
 	_, err := http.Post(n.Address, "encoding/json", bytes.NewBuffer(post))
@@ -51,5 +67,4 @@ func (n *NetLogger) send(p *ProvisionEvent) error {
 		return err
 	}
 	return nil
-
 }

@@ -14,8 +14,7 @@ type CommandExecuter struct {
 func New(errLogger, infLogger *log.Logger) *CommandExecuter {
 
 	if len(Cconf.Logs.Rpc) > 1 {
-		netLogger := new(NetLogger)
-		netLogger.Address = Cconf.Logs.Rpc
+		netLogger := NewNetLogger()
 
 		return &CommandExecuter{
 			errLogger: errLogger,
