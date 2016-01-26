@@ -45,8 +45,9 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 		me.errLogger.Printf("Error: %s\n", err)
 
 		if len(Cconf.Logs.Rpc) > 1 {
-			me.netLogger.SendError([]byte(err.Error()), body)
-			me.netLogger.SendError(out[:], body)
+			me.infLogger.Println("rpc parameters: %s", Cconf.Logs.Rpc)
+			me.netLogger.Send([]byte(err.Error()), body[:], true)
+			me.netLogger.Send(out[:], body[:], true)
 		}
 
 		return false
@@ -55,7 +56,7 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 	me.infLogger.Println("Processed!")
 
 	if len(Cconf.Logs.Rpc) > 1 {
-		me.netLogger.SendOK(out, body)
+		me.netLogger.Send(out[:], body[:], false)
 	}
 
 	return true

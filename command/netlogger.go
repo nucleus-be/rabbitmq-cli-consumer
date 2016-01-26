@@ -28,30 +28,14 @@ type NetLogger struct {
 	Address string
 }
 
-func (n *NetLogger) SendOK(p []byte, bod []byte) error {
+func (n *NetLogger) Send(p []byte, bod []byte, isError bool) error {
 	event := ProvisionEvent{
 		JsonRpc: "2.0",
 		Method:  "Event::createProvisioningEvent",
 		Id:      rand.Int31(),
 		Params: &Parameters{
 			Data: &Data{
-				Error:   false,
-				Output:  string(p),
-				Message: bod,
-			},
-		},
-	}
-	return n.send(&event)
-}
-
-func (n *NetLogger) SendError(p []byte, bod []byte) error {
-	event := ProvisionEvent{
-		JsonRpc: "2.0",
-		Method:  "Event::createProvisioningEvent",
-		Id:      rand.Int31(),
-		Params: &Parameters{
-			Data: &Data{
-				Error:   true,
+				Error:   isError,
 				Output:  string(p),
 				Message: bod,
 			},
