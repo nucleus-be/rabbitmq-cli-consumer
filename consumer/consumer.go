@@ -178,13 +178,14 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 
 		table = make(map[string]interface{}, 0)
 		table["x-dead-letter-exchange"] = cfg.Deadexchange.Name
+		table["x-dead-letter-routing-key"] = cfg.Queue.Key
 
 		infLogger.Printf("Declaring error queue \"%s\"...", cfg.Deadexchange.Queue)
 		_, err = ch.QueueDeclare(cfg.Deadexchange.Queue, true, false, false, false, amqp.Table{})
 
 		// Bind queue
 		infLogger.Printf("Binding  error queue \"%s\" to dead letter exchange \"%s\"...", cfg.Deadexchange.Queue, cfg.Deadexchange.Name)
-		err = ch.QueueBind(cfg.Deadexchange.Queue, cfg.Queue.Name, cfg.Deadexchange.Name, false, amqp.Table{})
+		err = ch.QueueBind(cfg.Deadexchange.Queue, "", cfg.Deadexchange.Name, false, amqp.Table{})
 
 		if nil != err {
 			return nil, errors.New(fmt.Sprintf("Failed to bind queue to dead-letter exchange: %s", err.Error()))
