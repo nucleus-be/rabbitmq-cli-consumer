@@ -33,6 +33,7 @@ func New(errLogger, infLogger *log.Logger) *CommandExecuter {
 
 func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 	me.infLogger.Println("Processing message...")
+	me.infLogger.Printf("Cmd: %s\n", cmd.Path)
 	out, err := cmd.CombinedOutput()
 
 	//log output php script to info
