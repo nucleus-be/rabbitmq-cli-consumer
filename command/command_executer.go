@@ -45,9 +45,13 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 		me.errLogger.Printf("Error: %s\n", err)
 
 		if len(Cconf.Logs.Rpc) > 1 {
-			me.infLogger.Println("rpc parameters: %s", Cconf.Logs.Rpc)
-			me.netLogger.Send([]byte(err.Error()), body[:], true)
-			me.netLogger.Send(out[:], body[:], true)
+			me.infLogger.Printf("rpc parameters: %s", Cconf.Logs.Rpc)
+			if err := me.netLogger.Send([]byte(err.Error()), body[:], true); err != nil {
+				me.infLogger.Printf("failed sending provision error event -> error: %s", err)
+			}
+			if err := me.netLogger.Send(out[:], body[:], true); err != nil {
+				me.infLogger.Printf("failed sending provision error event -> error: %s", err)
+			}
 		}
 
 		return false
@@ -56,7 +60,9 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 	me.infLogger.Println("Processed!")
 
 	if len(Cconf.Logs.Rpc) > 1 {
-		me.netLogger.Send(out[:], body[:], false)
+		if err := me.netLogger.Send(out[:], body[:], false); err != nil {
+			me.infLogger.Printf("failed sending provision success event -> error: %s", err)
+		}
 	}
 
 	return true
