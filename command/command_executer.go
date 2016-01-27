@@ -32,7 +32,7 @@ func New(errLogger, infLogger *log.Logger) *CommandExecuter {
 
 func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 	me.infLogger.Println("Processing message...")
-	me.infLogger.Printf("Cmd: %s\n", cmd.Path)
+	me.infLogger.Printf("Cmd: %s  params: %s \n", cmd.Path, cmd.Args)
 	out, err := cmd.CombinedOutput()
 
 	//log output php script to info
@@ -45,9 +45,6 @@ func (me CommandExecuter) Execute(cmd *exec.Cmd, body []byte) bool {
 
 		if len(Cconf.Logs.Rpc) > 1 {
 			me.infLogger.Printf("rpc parameters: %s", Cconf.Logs.Rpc)
-			if err := me.netLogger.Send([]byte(err.Error()), body[:], true); err != nil {
-				me.infLogger.Printf("failed sending provision error event -> error: %s", err)
-			}
 			if err := me.netLogger.Send(out[:], body[:], true); err != nil {
 				me.infLogger.Printf("failed sending provision error event -> error: %s", err)
 			}
