@@ -1,7 +1,7 @@
 package config
 
 import (
-	"code.google.com/p/gcfg"
+	"github.com/scalingdata/gcfg"
 	"path/filepath"
 )
 
