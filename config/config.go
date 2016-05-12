@@ -27,6 +27,7 @@ type Config struct {
 	Queue struct {
 		Key  string
 		Name string
+		Max_Length int32
 	}
 	Deadexchange struct {
 		Name       string

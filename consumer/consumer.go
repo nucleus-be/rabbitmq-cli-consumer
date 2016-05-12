@@ -202,8 +202,11 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
 		}
 
-		//binding to exchange
+		if 0 != cfg.Queue.Max_Length {
+			table["x-max-length"] = cfg.Queue.Max_Length
+		}
 
+		//binding to exchange
 		infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.Queue.Name, table)
 		_, err = ch.QueueDeclare(cfg.Queue.Name, true, false, false, false, table)
 
