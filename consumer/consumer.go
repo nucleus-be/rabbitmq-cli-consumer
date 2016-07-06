@@ -9,11 +9,12 @@ import (
 	"github.com/nucleus-be/rabbitmq-cli-consumer/command"
 	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
 	"github.com/streadway/amqp"
-	"log"
-	"net/url"
-	"strconv"
-	"os/exec"
 	"io/ioutil"
+	"log"
+	"math/rand"
+	"net/url"
+	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -92,7 +93,7 @@ func (c *Consumer) Consume() {
 
 				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
 
-				var cmd *exec.Cmd;
+				var cmd *exec.Cmd
 
 				if c.WriteToPath != "" {
 
@@ -101,6 +102,9 @@ func (c *Consumer) Consume() {
 					filepath += c.Queue
 					filepath += "-"
 					filepath += time.Now().Format("20060102150405")
+					filepath += "-"
+					filepath += strconv.FormatInt(rand.Int63(), 10) // Convert random int to string
+					filepath += ".json"
 
 					cmd = c.Factory.Create(filepath)
 					d1 := []byte(input) // Convert string to bytes

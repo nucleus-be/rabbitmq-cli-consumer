@@ -1,8 +1,8 @@
 package config
 
 import (
-	"path/filepath"
 	"gopkg.in/gcfg.v1"
+	"path/filepath"
 )
 
 type Config struct {
@@ -26,8 +26,8 @@ type Config struct {
 		Durable    bool
 	}
 	Queue struct {
-		Key  string
-		Name string
+		Key        string
+		Name       string
 		Max_Length int32
 	}
 	Deadexchange struct {
