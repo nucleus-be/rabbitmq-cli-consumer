@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
+	"encoding/json"
 )
 
 type Consumer struct {
@@ -107,8 +108,10 @@ func (c *Consumer) Consume() {
 					filepath += ".json"
 
 					cmd = c.Factory.Create(filepath)
-					d1 := []byte(input) // Convert string to bytes
-					err := ioutil.WriteFile(filepath, d1, 0644)
+
+					jsonContent := jsonPrettyPrint(input) // Pretty print
+
+					err := ioutil.WriteFile(filepath, []byte(jsonContent), 0644)
 					if err != nil {
 						c.ErrLogger.Println("Could not write input to file")
 						d.Nack(true, true)
@@ -264,4 +267,14 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 		Retry:       cfg.Deadexchange.Retry,
 		WriteToPath: cfg.Output.Path,
 	}, nil
+}
+
+func jsonPrettyPrint(in []byte) string {
+	var out bytes.Buffer
+	err := json.Indent(&out, in, "", "\t")
+	if err != nil {
+		return string(bytes.IndexByte(in, 0))
+	}
+
+	return out.String()
 }
