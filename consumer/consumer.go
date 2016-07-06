@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/ricbra/rabbitmq-cli-consumer/command"
-	"github.com/ricbra/rabbitmq-cli-consumer/config"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/command"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
 	"github.com/streadway/amqp"
 	"log"
 	"net/url"
 	"strconv"
+	"os/exec"
+	"io/ioutil"
 	"time"
 )
 
@@ -26,6 +28,7 @@ type Consumer struct {
 	DeadLetter  bool
 	Retry       int
 	Compression bool
+	WriteToPath string
 }
 
 func (c *Consumer) Consume() {
@@ -89,7 +92,27 @@ func (c *Consumer) Consume() {
 
 				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
 
-				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				var cmd *exec.Cmd;
+
+				if c.WriteToPath != "" {
+
+					var filepath string
+					filepath += c.WriteToPath
+					filepath += c.Queue
+					filepath += "-"
+					filepath += time.Now().Format("20060102150405")
+
+					cmd = c.Factory.Create(filepath)
+					d1 := []byte(input) // Convert string to bytes
+					err := ioutil.WriteFile(filepath, d1, 0644)
+					if err != nil {
+						c.ErrLogger.Println("Could not write input to file")
+						d.Nack(true, true)
+					}
+				} else {
+					cmd = c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				}
+
 				if c.Executer.Execute(cmd, d.Body[:]) {
 					d.Ack(true)
 				} else if retryCount >= c.Retry {
@@ -235,5 +258,6 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 		Compression: cfg.RabbitMq.Compression,
 		DeadLetter:  deadLetter,
 		Retry:       cfg.Deadexchange.Retry,
+		WriteToPath: cfg.Output.Path,
 	}, nil
 }

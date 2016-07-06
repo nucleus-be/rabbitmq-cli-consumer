@@ -1,7 +1,7 @@
 package command
 
 import (
-	"github.com/ricbra/rabbitmq-cli-consumer/config"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
 	"strings"
 )
 

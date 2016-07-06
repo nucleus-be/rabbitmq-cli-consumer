@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/scalingdata/gcfg"
 	"path/filepath"
+	"gopkg.in/gcfg.v1"
 )
 
 type Config struct {
@@ -13,6 +13,7 @@ type Config struct {
 		Port        string
 		Vhost       string
 		Compression bool
+		Path        bool
 	}
 	Prefetch struct {
 		Count  int
@@ -41,6 +42,9 @@ type Config struct {
 		Error string
 		Info  string
 		Rpc   string
+	}
+	Output struct {
+		Path string
 	}
 }
 
