@@ -6,11 +6,17 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/ricbra/rabbitmq-cli-consumer/command"
-	"github.com/ricbra/rabbitmq-cli-consumer/config"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/command"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
 	"github.com/streadway/amqp"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/url"
+	"os/exec"
+	"strconv"
+	"time"
+	"encoding/json"
 )
 
 type Consumer struct {
@@ -21,7 +27,10 @@ type Consumer struct {
 	ErrLogger   *log.Logger
 	InfLogger   *log.Logger
 	Executer    *command.CommandExecuter
+	DeadLetter  bool
+	Retry       int
 	Compression bool
+	WriteToPath string
 }
 
 func (c *Consumer) Consume() {
@@ -32,6 +41,17 @@ func (c *Consumer) Consume() {
 	}
 	c.InfLogger.Println("Succeeded registering consumer.")
 
+	var sendCh *amqp.Channel
+
+	if c.DeadLetter {
+		var err error
+		sendCh, err = c.Connection.Channel()
+		if err != nil {
+			c.ErrLogger.Println("Could not open channel to republish failed jobs %s", err)
+		}
+		defer sendCh.Close()
+	}
+
 	defer c.Connection.Close()
 	defer c.Channel.Close()
 
@@ -39,12 +59,14 @@ func (c *Consumer) Consume() {
 
 	go func() {
 		for d := range msgs {
+			c.InfLogger.Println("reading deliveries")
 			input := d.Body
 			if c.Compression {
 				var b bytes.Buffer
 				w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
 				if err != nil {
 					c.ErrLogger.Println("Could not create zlib handler")
+
 					d.Nack(true, true)
 				}
 				c.InfLogger.Println("Compressed message")
@@ -54,12 +76,80 @@ func (c *Consumer) Consume() {
 				input = b.Bytes()
 			}
 
-			cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
-			if c.Executer.Execute(cmd) {
-				d.Ack(true)
+			if c.DeadLetter {
+				var retryCount int
+				if d.Headers == nil {
+					d.Headers = make(map[string]interface{}, 0)
+				}
+				retry, ok := d.Headers["retry_count"]
+				if !ok {
+					retry = "0"
+				}
+				c.InfLogger.Println(fmt.Sprintf("retry %s", retry))
+
+				retryCount, err = strconv.Atoi(retry.(string))
+				if err != nil {
+					c.ErrLogger.Fatal("could not parse retry header")
+				}
+
+				c.InfLogger.Println(fmt.Sprintf("retryCount : %d max retries: %d", retryCount, c.Retry))
+
+				var cmd *exec.Cmd
+
+				if c.WriteToPath != "" {
+
+					var filepath string
+					filepath += c.WriteToPath
+					filepath += c.Queue
+					filepath += "-"
+					filepath += time.Now().Format("20060102150405")
+					filepath += "-"
+					filepath += strconv.FormatInt(rand.Int63(), 10) // Convert random int to string
+					filepath += ".json"
+
+					cmd = c.Factory.Create(filepath)
+
+					jsonContent := jsonPrettyPrint(input) // Pretty print
+
+					err := ioutil.WriteFile(filepath, []byte(jsonContent), 0644)
+					if err != nil {
+						c.ErrLogger.Println("Could not write input to file")
+						d.Nack(true, true)
+					}
+				} else {
+					cmd = c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				}
+
+				if c.Executer.Execute(cmd, d.Body[:]) {
+					d.Ack(true)
+				} else if retryCount >= c.Retry {
+					d.Nack(true, false)
+				} else {
+					//republish message with new retry header
+					retryCount++
+					d.Headers["retry_count"] = strconv.Itoa(retryCount)
+					republish := amqp.Publishing{
+						ContentType:     d.ContentType,
+						ContentEncoding: d.ContentEncoding,
+						Timestamp:       time.Now(),
+						Body:            d.Body,
+						Headers:         d.Headers,
+					}
+					err = sendCh.Publish("", c.Queue, false, false, republish)
+					if err != nil {
+						c.ErrLogger.Println("error republish %s", err)
+					}
+					d.Ack(true)
+				}
 			} else {
-				d.Nack(true, true)
+				cmd := c.Factory.Create(base64.StdEncoding.EncodeToString(input))
+				if c.Executer.Execute(cmd, d.Body[:]) {
+					d.Ack(true)
+				} else {
+					d.Nack(true, false)
+				}
 			}
+
 		}
 	}()
 	c.InfLogger.Println("Waiting for messages...")
@@ -100,16 +190,37 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 	}
 	infLogger.Println("Succeeded setting QoS.")
 
-	infLogger.Printf("Declaring queue \"%s\"...", cfg.RabbitMq.Queue)
-	_, err = ch.QueueDeclare(cfg.RabbitMq.Queue, true, false, false, false, nil)
-
-	if nil != err {
-		return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
-	}
-
 	// Check for missing exchange settings to preserve BC
 	if "" == cfg.Exchange.Name && "" == cfg.Exchange.Type && !cfg.Exchange.Durable && !cfg.Exchange.Autodelete {
 		cfg.Exchange.Type = "direct"
+	}
+
+	var table map[string]interface{}
+	deadLetter := false
+
+	if "" != cfg.Deadexchange.Name {
+		infLogger.Printf("Declaring  deadletter exchange \"%s\"...", cfg.Deadexchange.Name)
+		err = ch.ExchangeDeclare(cfg.Deadexchange.Name, cfg.Deadexchange.Type, cfg.Deadexchange.Durable, cfg.Deadexchange.AutoDelete, false, false, amqp.Table{})
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
+		}
+
+		table = make(map[string]interface{}, 0)
+		table["x-dead-letter-exchange"] = cfg.Deadexchange.Name
+		table["x-dead-letter-routing-key"] = cfg.Queue.Key
+
+		infLogger.Printf("Declaring error queue \"%s\"...", cfg.Deadexchange.Queue)
+		_, err = ch.QueueDeclare(cfg.Deadexchange.Queue, true, false, false, false, amqp.Table{})
+
+		// Bind queue
+		infLogger.Printf("Binding  error queue \"%s\" to dead letter exchange \"%s\"...", cfg.Deadexchange.Queue, cfg.Deadexchange.Name)
+		err = ch.QueueBind(cfg.Deadexchange.Queue, cfg.Queue.Key, cfg.Deadexchange.Name, false, amqp.Table{})
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue to dead-letter exchange: %s", err.Error()))
+		}
+		deadLetter = true
 	}
 
 	// Empty Exchange name means default, no need to declare
@@ -121,23 +232,49 @@ func New(cfg *config.Config, factory *command.CommandFactory, errLogger, infLogg
 			return nil, errors.New(fmt.Sprintf("Failed to declare exchange: %s", err.Error()))
 		}
 
-		// Bind queue
-		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.RabbitMq.Queue, cfg.Exchange.Name)
-		err = ch.QueueBind(cfg.RabbitMq.Queue, "", cfg.Exchange.Name, false, nil)
+		if 0 != cfg.Queue.Max_Length {
+			table["x-max-length"] = cfg.Queue.Max_Length
+		}
+
+		//binding to exchange
+		infLogger.Printf("Declaring queue \"%s\"...with args: %+v", cfg.Queue.Name, table)
+		_, err = ch.QueueDeclare(cfg.Queue.Name, true, false, false, false, table)
 
 		if nil != err {
-			return nil, errors.New(fmt.Sprintf("Failed to bind queue to exchange: %s", err.Error()))
+			return nil, errors.New(fmt.Sprintf("Failed to declare queue: %s", err.Error()))
 		}
+
+		// Bind queue with key
+		infLogger.Printf("Binding queue \"%s\" to exchange \"%s\"...", cfg.Queue.Name, cfg.Exchange.Name)
+		err = ch.QueueBind(cfg.Queue.Name, cfg.Queue.Key, cfg.Exchange.Name, false, table)
+
+		if nil != err {
+			return nil, errors.New(fmt.Sprintf("Failed to bind queue exchange: %s", err.Error()))
+		}
+
 	}
 
 	return &Consumer{
 		Channel:     ch,
 		Connection:  conn,
-		Queue:       cfg.RabbitMq.Queue,
+		Queue:       cfg.Queue.Name,
 		Factory:     factory,
 		ErrLogger:   errLogger,
 		InfLogger:   infLogger,
 		Executer:    command.New(errLogger, infLogger),
 		Compression: cfg.RabbitMq.Compression,
+		DeadLetter:  deadLetter,
+		Retry:       cfg.Deadexchange.Retry,
+		WriteToPath: cfg.Output.Path,
 	}, nil
+}
+
+func jsonPrettyPrint(in []byte) string {
+	var out bytes.Buffer
+	err := json.Indent(&out, in, "", "\t")
+	if err != nil {
+		return string(bytes.IndexByte(in, 0))
+	}
+
+	return out.String()
 }

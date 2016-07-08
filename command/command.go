@@ -1,7 +1,12 @@
 package command
 
 import (
+	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
 	"strings"
+)
+
+var (
+	Cconf *config.Config
 )
 
 func Factory(baseCmd string) *CommandFactory {

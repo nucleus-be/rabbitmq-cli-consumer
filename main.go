@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/codegangsta/cli"
-	"github.com/ricbra/rabbitmq-cli-consumer/command"
-	"github.com/ricbra/rabbitmq-cli-consumer/config"
-	"github.com/ricbra/rabbitmq-cli-consumer/consumer"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/command"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/config"
+	"github.com/nucleus-be/rabbitmq-cli-consumer/consumer"
 	"io"
 	"log"
 	"os"
@@ -41,6 +41,8 @@ func main() {
 
 		logger := log.New(os.Stderr, "", log.Ldate|log.Ltime)
 		cfg, err := config.LoadAndParse(c.String("configuration"))
+
+		command.Cconf = cfg
 
 		if err != nil {
 			logger.Fatalf("Failed parsing configuration: %s\n", err)
